@@ -229,7 +229,7 @@ def create_token(user_id: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def get_current_user(authorization: str = None):
+async def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.split(" ")[1]
@@ -287,9 +287,7 @@ async def login(data: UserLogin):
     return TokenResponse(token=token, user=user_response)
 
 @api_router.get("/auth/me", response_model=UserResponse)
-async def get_me(authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
+async def get_me(user: dict = Depends(get_current_user)):
     return UserResponse(
         id=user["id"],
         email=user["email"],
@@ -300,9 +298,7 @@ async def get_me(authorization: str = None):
 # ============== PROJECT ROUTES ==============
 
 @api_router.post("/projects", response_model=ProjectResponse)
-async def create_project(data: ProjectCreate, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
+async def create_project(data: ProjectCreate, user: dict = Depends(get_current_user)):
     
     project_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
