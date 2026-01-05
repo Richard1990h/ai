@@ -476,7 +476,7 @@ const WorkspacePage = () => {
               </ScrollArea>
 
               {/* Chat Input */}
-              <div className="p-3 border-t border-border">
+              <div className="p-3 border-t border-border pb-16">
                 <div className="flex gap-2">
                   <Input
                     placeholder={`Ask ${selectedAgent?.name || 'the agent'}...`}
