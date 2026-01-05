@@ -455,6 +455,11 @@ async def get_chat_history(project_id: Optional[str] = None, agent_type: Optiona
 
 # ============== CODE EXECUTION ==============
 
+class BuildRequest(BaseModel):
+    files: Dict[str, str]
+    language: str = "python"
+    main_file: Optional[str] = None
+
 @api_router.post("/execute")
 async def execute_code(data: CodeExecuteRequest, user: dict = Depends(get_current_user)):
     supported_languages = ["python", "javascript", "typescript"]
@@ -495,6 +500,82 @@ async def execute_code(data: CodeExecuteRequest, user: dict = Depends(get_curren
         return {"output": "Execution timed out (10s limit)", "error": True}
     except Exception as e:
         return {"output": str(e), "error": True}
+
+@api_router.post("/build")
+async def build_project(data: BuildRequest, user: dict = Depends(get_current_user)):
+    """Build and run a complete project with multiple files"""
+    supported_languages = ["python", "javascript", "typescript"]
+    if data.language not in supported_languages:
+        return {"output": f"Language '{data.language}' not supported for building", "error": True, "steps": []}
+    
+    steps = []
+    temp_dir = tempfile.mkdtemp()
+    
+    try:
+        # Step 1: Create all files
+        steps.append({"step": "Creating project files", "status": "success"})
+        for file_path, content in data.files.items():
+            full_path = os.path.join(temp_dir, file_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, 'w') as f:
+                f.write(content)
+        
+        # Step 2: Find main file
+        main_file = data.main_file
+        if not main_file:
+            # Auto-detect main file
+            for pattern in ['main.py', 'app.py', 'index.py', 'main.js', 'index.js', 'app.js']:
+                if pattern in data.files:
+                    main_file = pattern
+                    break
+            if not main_file:
+                main_file = list(data.files.keys())[0]
+        
+        steps.append({"step": f"Main file: {main_file}", "status": "success"})
+        
+        # Step 3: Execute
+        steps.append({"step": "Executing project", "status": "running"})
+        
+        full_main_path = os.path.join(temp_dir, main_file)
+        
+        if data.language == "python":
+            result = subprocess.run(
+                [sys.executable, full_main_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=temp_dir,
+                env={**os.environ, 'PYTHONPATH': temp_dir}
+            )
+        elif data.language in ["javascript", "typescript"]:
+            result = subprocess.run(
+                ["node", full_main_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=temp_dir
+            )
+        
+        output = result.stdout
+        if result.stderr:
+            output += "\n" + result.stderr
+        
+        steps[-1]["status"] = "success" if result.returncode == 0 else "error"
+        
+        return {
+            "output": output or "Build completed (no output)",
+            "error": result.returncode != 0,
+            "steps": steps
+        }
+    
+    except subprocess.TimeoutExpired:
+        return {"output": "Build timed out (30s limit)", "error": True, "steps": steps}
+    except Exception as e:
+        return {"output": str(e), "error": True, "steps": steps}
+    finally:
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 def get_file_extension(language: str) -> str:
     extensions = {
