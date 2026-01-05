@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import DashboardPage from "./pages/DashboardPage";
 import WorkspacePage from "./pages/WorkspacePage";
+import AdminPage from "./pages/AdminPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children }) => {
@@ -59,6 +60,7 @@ function App() {
           <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/workspace/:projectId" element={<ProtectedRoute><WorkspacePage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
         </Routes>
         <Toaster position="bottom-right" theme="dark" />
       </BrowserRouter>
