@@ -1,5 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header, Request
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,13 +13,11 @@ from datetime import datetime, timezone
 import bcrypt
 import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
 import asyncio
 import json
 import subprocess
 import tempfile
 import sys
-import shutil
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -37,9 +35,6 @@ JWT_EXPIRATION = 86400 * 7  # 7 days
 # LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
-# Stripe Key
-STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', '')
-
 # Create the main app
 app = FastAPI(title="Neural Bridge API")
 
@@ -49,21 +44,6 @@ api_router = APIRouter(prefix="/api")
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ============== CREDIT PACKAGES ==============
-CREDIT_PACKAGES = {
-    "starter": {"credits": 500, "price": 5.00, "name": "Starter Pack"},
-    "basic": {"credits": 1200, "price": 10.00, "name": "Basic Pack"},
-    "pro": {"credits": 3500, "price": 25.00, "name": "Pro Pack"},
-    "enterprise": {"credits": 8000, "price": 50.00, "name": "Enterprise Pack"},
-}
-
-# Default system settings
-DEFAULT_SETTINGS = {
-    "credits_per_1k_tokens": 10,
-    "free_credits_on_signup": 100,
-    "min_credits_for_chat": 5,
-}
 
 # ============== MODELS ==============
 
@@ -81,8 +61,6 @@ class UserResponse(BaseModel):
     id: str
     email: str
     name: str
-    credits: int = 0
-    is_admin: bool = False
     created_at: str
 
 class TokenResponse(BaseModel):
@@ -126,30 +104,6 @@ class ChatRequest(BaseModel):
 class CodeExecuteRequest(BaseModel):
     code: str
     language: str = "python"
-
-class BuildRequest(BaseModel):
-    files: Dict[str, str]
-    language: str = "python"
-    main_file: Optional[str] = None
-
-class PasswordResetRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-class AdminCreditUpdate(BaseModel):
-    user_id: str
-    credits: int
-    operation: str  # "add" or "subtract"
-    reason: str = ""
-
-class AdminSettingsUpdate(BaseModel):
-    credits_per_1k_tokens: Optional[int] = None
-    free_credits_on_signup: Optional[int] = None
-    min_credits_for_chat: Optional[int] = None
-
-class CheckoutRequest(BaseModel):
-    package_id: str
-    origin_url: str
 
 # Agent configurations with specialized prompts
 AGENTS = {
@@ -290,94 +244,43 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-async def get_admin_user(user: dict = Depends(get_current_user)):
-    if not user.get("is_admin", False):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-async def get_system_settings():
-    settings = await db.settings.find_one({"type": "system"}, {"_id": 0})
-    if not settings:
-        settings = {**DEFAULT_SETTINGS, "type": "system"}
-        await db.settings.insert_one(settings)
-    return settings
-
 # ============== AUTH ROUTES ==============
 
 @api_router.post("/auth/register", response_model=TokenResponse)
-async def register(data: UserCreate, request: Request):
+async def register(data: UserCreate):
     existing = await db.users.find_one({"email": data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    settings = await get_system_settings()
     user_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    
-    # Get client IP
-    client_ip = request.client.host if request.client else "unknown"
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
     
     user_doc = {
         "id": user_id,
         "email": data.email,
         "name": data.name,
         "password_hash": hash_password(data.password),
-        "credits": settings.get("free_credits_on_signup", 100),
-        "total_credits_used": 0,
-        "is_admin": False,
-        "created_at": now,
-        "last_login": now,
-        "last_ip": client_ip,
-        "login_history": [{"timestamp": now, "ip": client_ip}]
+        "created_at": now
     }
     
     await db.users.insert_one(user_doc)
     
     token = create_token(user_id)
-    user_response = UserResponse(
-        id=user_id, 
-        email=data.email, 
-        name=data.name, 
-        credits=user_doc["credits"],
-        is_admin=False,
-        created_at=now
-    )
+    user_response = UserResponse(id=user_id, email=data.email, name=data.name, created_at=now)
     
     return TokenResponse(token=token, user=user_response)
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(data: UserLogin, request: Request):
+async def login(data: UserLogin):
     user = await db.users.find_one({"email": data.email}, {"_id": 0})
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Get client IP
-    client_ip = request.client.host if request.client else "unknown"
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    # Update login info
-    await db.users.update_one(
-        {"id": user["id"]},
-        {
-            "$set": {"last_login": now, "last_ip": client_ip},
-            "$push": {"login_history": {"$each": [{"timestamp": now, "ip": client_ip}], "$slice": -50}}
-        }
-    )
     
     token = create_token(user["id"])
     user_response = UserResponse(
         id=user["id"],
         email=user["email"],
         name=user["name"],
-        credits=user.get("credits", 0),
-        is_admin=user.get("is_admin", False),
         created_at=user["created_at"]
     )
     
@@ -389,282 +292,14 @@ async def get_me(user: dict = Depends(get_current_user)):
         id=user["id"],
         email=user["email"],
         name=user["name"],
-        credits=user.get("credits", 0),
-        is_admin=user.get("is_admin", False),
         created_at=user["created_at"]
     )
-
-@api_router.post("/auth/reset-password")
-async def reset_password(data: PasswordResetRequest, user: dict = Depends(get_current_user)):
-    if not verify_password(data.current_password, user["password_hash"]):
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
-    
-    if len(data.new_password) < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
-    
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"password_hash": hash_password(data.new_password)}}
-    )
-    
-    return {"message": "Password updated successfully"}
-
-# ============== USER CREDITS & PAYMENTS ==============
-
-@api_router.get("/credits/packages")
-async def get_credit_packages():
-    return CREDIT_PACKAGES
-
-@api_router.get("/credits/balance")
-async def get_credit_balance(user: dict = Depends(get_current_user)):
-    return {
-        "credits": user.get("credits", 0),
-        "total_used": user.get("total_credits_used", 0)
-    }
-
-@api_router.post("/credits/checkout")
-async def create_checkout(data: CheckoutRequest, request: Request, user: dict = Depends(get_current_user)):
-    if data.package_id not in CREDIT_PACKAGES:
-        raise HTTPException(status_code=400, detail="Invalid package")
-    
-    package = CREDIT_PACKAGES[data.package_id]
-    
-    # Initialize Stripe
-    webhook_url = f"{data.origin_url}/api/webhook/stripe"
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    
-    success_url = f"{data.origin_url}/dashboard?session_id={{CHECKOUT_SESSION_ID}}&payment=success"
-    cancel_url = f"{data.origin_url}/dashboard?payment=cancelled"
-    
-    checkout_request = CheckoutSessionRequest(
-        amount=package["price"],
-        currency="usd",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "user_id": user["id"],
-            "package_id": data.package_id,
-            "credits": str(package["credits"])
-        }
-    )
-    
-    session = await stripe_checkout.create_checkout_session(checkout_request)
-    
-    # Create payment transaction record
-    await db.payment_transactions.insert_one({
-        "id": str(uuid.uuid4()),
-        "session_id": session.session_id,
-        "user_id": user["id"],
-        "package_id": data.package_id,
-        "amount": package["price"],
-        "currency": "usd",
-        "credits": package["credits"],
-        "status": "pending",
-        "payment_status": "initiated",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {"url": session.url, "session_id": session.session_id}
-
-@api_router.get("/credits/checkout/status/{session_id}")
-async def check_payment_status(session_id: str, user: dict = Depends(get_current_user)):
-    # Check if already processed
-    transaction = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    
-    if transaction.get("payment_status") == "paid":
-        return {"status": "complete", "payment_status": "paid", "credits_added": transaction.get("credits", 0)}
-    
-    # Initialize Stripe and check status
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url="")
-    status = await stripe_checkout.get_checkout_status(session_id)
-    
-    if status.payment_status == "paid" and transaction.get("payment_status") != "paid":
-        # Add credits to user
-        credits_to_add = transaction.get("credits", 0)
-        await db.users.update_one(
-            {"id": transaction["user_id"]},
-            {"$inc": {"credits": credits_to_add}}
-        )
-        
-        # Update transaction
-        await db.payment_transactions.update_one(
-            {"session_id": session_id},
-            {"$set": {"status": "complete", "payment_status": "paid", "completed_at": datetime.now(timezone.utc).isoformat()}}
-        )
-        
-        return {"status": "complete", "payment_status": "paid", "credits_added": credits_to_add}
-    
-    return {"status": status.status, "payment_status": status.payment_status}
-
-@api_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    body = await request.body()
-    signature = request.headers.get("Stripe-Signature", "")
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url="")
-    
-    try:
-        event = await stripe_checkout.handle_webhook(body, signature)
-        
-        if event.payment_status == "paid":
-            transaction = await db.payment_transactions.find_one({"session_id": event.session_id})
-            if transaction and transaction.get("payment_status") != "paid":
-                credits_to_add = int(event.metadata.get("credits", 0))
-                user_id = event.metadata.get("user_id")
-                
-                await db.users.update_one(
-                    {"id": user_id},
-                    {"$inc": {"credits": credits_to_add}}
-                )
-                
-                await db.payment_transactions.update_one(
-                    {"session_id": event.session_id},
-                    {"$set": {"status": "complete", "payment_status": "paid", "completed_at": datetime.now(timezone.utc).isoformat()}}
-                )
-        
-        return {"received": True}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"received": True}
-
-# ============== ADMIN ROUTES ==============
-
-@api_router.get("/admin/users")
-async def admin_get_users(admin: dict = Depends(get_admin_user)):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
-    return users
-
-@api_router.get("/admin/users/{user_id}")
-async def admin_get_user(user_id: str, admin: dict = Depends(get_admin_user)):
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get user's conversations
-    conversations = await db.chat_history.find({"user_id": user_id}, {"_id": 0}).sort("timestamp", -1).to_list(100)
-    
-    # Get user's payment history
-    payments = await db.payment_transactions.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(50)
-    
-    return {
-        "user": user,
-        "conversations": conversations,
-        "payments": payments
-    }
-
-@api_router.post("/admin/users/credits")
-async def admin_update_credits(data: AdminCreditUpdate, admin: dict = Depends(get_admin_user)):
-    user = await db.users.find_one({"id": data.user_id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    current_credits = user.get("credits", 0)
-    
-    if data.operation == "add":
-        new_credits = current_credits + data.credits
-    elif data.operation == "subtract":
-        new_credits = max(0, current_credits - data.credits)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid operation")
-    
-    await db.users.update_one(
-        {"id": data.user_id},
-        {"$set": {"credits": new_credits}}
-    )
-    
-    # Log admin action
-    await db.admin_logs.insert_one({
-        "id": str(uuid.uuid4()),
-        "admin_id": admin["id"],
-        "action": f"credits_{data.operation}",
-        "target_user_id": data.user_id,
-        "amount": data.credits,
-        "reason": data.reason,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    })
-    
-    return {"message": f"Credits updated. New balance: {new_credits}", "new_credits": new_credits}
-
-@api_router.get("/admin/settings")
-async def admin_get_settings(admin: dict = Depends(get_admin_user)):
-    settings = await get_system_settings()
-    return settings
-
-@api_router.put("/admin/settings")
-async def admin_update_settings(data: AdminSettingsUpdate, admin: dict = Depends(get_admin_user)):
-    update_fields = {}
-    if data.credits_per_1k_tokens is not None:
-        update_fields["credits_per_1k_tokens"] = data.credits_per_1k_tokens
-    if data.free_credits_on_signup is not None:
-        update_fields["free_credits_on_signup"] = data.free_credits_on_signup
-    if data.min_credits_for_chat is not None:
-        update_fields["min_credits_for_chat"] = data.min_credits_for_chat
-    
-    if update_fields:
-        await db.settings.update_one(
-            {"type": "system"},
-            {"$set": update_fields},
-            upsert=True
-        )
-    
-    return await get_system_settings()
-
-@api_router.get("/admin/stats")
-async def admin_get_stats(admin: dict = Depends(get_admin_user)):
-    total_users = await db.users.count_documents({})
-    total_projects = await db.projects.count_documents({})
-    total_chats = await db.chat_history.count_documents({})
-    total_payments = await db.payment_transactions.count_documents({"payment_status": "paid"})
-    
-    # Revenue calculation
-    payments = await db.payment_transactions.find({"payment_status": "paid"}, {"amount": 1}).to_list(1000)
-    total_revenue = sum(p.get("amount", 0) for p in payments)
-    
-    # Recent signups
-    recent_users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).limit(5).to_list(5)
-    
-    return {
-        "total_users": total_users,
-        "total_projects": total_projects,
-        "total_chats": total_chats,
-        "total_payments": total_payments,
-        "total_revenue": total_revenue,
-        "recent_users": recent_users
-    }
-
-@api_router.get("/admin/logs")
-async def admin_get_logs(admin: dict = Depends(get_admin_user)):
-    logs = await db.admin_logs.find({}, {"_id": 0}).sort("timestamp", -1).limit(100).to_list(100)
-    return logs
-
-@api_router.post("/admin/make-admin/{user_id}")
-async def admin_make_admin(user_id: str, admin: dict = Depends(get_admin_user)):
-    result = await db.users.update_one(
-        {"id": user_id},
-        {"$set": {"is_admin": True}}
-    )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User is now an admin"}
-
-@api_router.post("/admin/remove-admin/{user_id}")
-async def admin_remove_admin(user_id: str, admin: dict = Depends(get_admin_user)):
-    if user_id == admin["id"]:
-        raise HTTPException(status_code=400, detail="Cannot remove your own admin status")
-    result = await db.users.update_one(
-        {"id": user_id},
-        {"$set": {"is_admin": False}}
-    )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "Admin status removed"}
 
 # ============== PROJECT ROUTES ==============
 
 @api_router.post("/projects", response_model=ProjectResponse)
 async def create_project(data: ProjectCreate, user: dict = Depends(get_current_user)):
+    
     project_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     
@@ -762,14 +397,6 @@ async def chat_with_agent(data: ChatRequest, user: dict = Depends(get_current_us
     if data.agent_type not in AGENTS:
         raise HTTPException(status_code=400, detail="Invalid agent type")
     
-    # Check credits
-    settings = await get_system_settings()
-    min_credits = settings.get("min_credits_for_chat", 5)
-    user_credits = user.get("credits", 0)
-    
-    if user_credits < min_credits:
-        raise HTTPException(status_code=402, detail=f"Insufficient credits. Need at least {min_credits} credits.")
-    
     agent = AGENTS[data.agent_type]
     
     # Build context message
@@ -796,19 +423,6 @@ async def chat_with_agent(data: ChatRequest, user: dict = Depends(get_current_us
         user_message = UserMessage(text=full_message)
         response = await chat.send_message(user_message)
         
-        # Estimate tokens and deduct credits
-        tokens_used = len(full_message.split()) + len(response.split())
-        credits_per_1k = settings.get("credits_per_1k_tokens", 10)
-        credits_used = max(1, int((tokens_used / 1000) * credits_per_1k))
-        
-        # Deduct credits
-        await db.users.update_one(
-            {"id": user["id"]},
-            {
-                "$inc": {"credits": -credits_used, "total_credits_used": credits_used}
-            }
-        )
-        
         # Save chat history
         chat_doc = {
             "id": str(uuid.uuid4()),
@@ -817,21 +431,11 @@ async def chat_with_agent(data: ChatRequest, user: dict = Depends(get_current_us
             "project_id": data.project_id,
             "user_message": data.message,
             "agent_response": response,
-            "tokens_used": tokens_used,
-            "credits_used": credits_used,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         await db.chat_history.insert_one(chat_doc)
         
-        # Get updated credits
-        updated_user = await db.users.find_one({"id": user["id"]}, {"credits": 1})
-        
-        return {
-            "response": response, 
-            "agent": agent["name"],
-            "credits_used": credits_used,
-            "remaining_credits": updated_user.get("credits", 0)
-        }
+        return {"response": response, "agent": agent["name"]}
     
     except Exception as e:
         logger.error(f"Chat error: {e}")
@@ -892,79 +496,6 @@ async def execute_code(data: CodeExecuteRequest, user: dict = Depends(get_curren
     except Exception as e:
         return {"output": str(e), "error": True}
 
-@api_router.post("/build")
-async def build_project(data: BuildRequest, user: dict = Depends(get_current_user)):
-    """Build and run a complete project with multiple files"""
-    supported_languages = ["python", "javascript", "typescript"]
-    if data.language not in supported_languages:
-        return {"output": f"Language '{data.language}' not supported for building", "error": True, "steps": []}
-    
-    steps = []
-    temp_dir = tempfile.mkdtemp()
-    
-    try:
-        # Step 1: Create all files
-        steps.append({"step": "Creating project files", "status": "success"})
-        for file_path, content in data.files.items():
-            full_path = os.path.join(temp_dir, file_path)
-            os.makedirs(os.path.dirname(full_path) if os.path.dirname(full_path) else temp_dir, exist_ok=True)
-            with open(full_path, 'w') as f:
-                f.write(content)
-        
-        # Step 2: Find main file
-        main_file = data.main_file
-        if not main_file:
-            for pattern in ['main.py', 'app.py', 'index.py', 'main.js', 'index.js', 'app.js']:
-                if pattern in data.files:
-                    main_file = pattern
-                    break
-            if not main_file:
-                main_file = list(data.files.keys())[0]
-        
-        steps.append({"step": f"Main file: {main_file}", "status": "success"})
-        
-        # Step 3: Execute
-        steps.append({"step": "Executing project", "status": "running"})
-        
-        full_main_path = os.path.join(temp_dir, main_file)
-        
-        if data.language == "python":
-            result = subprocess.run(
-                [sys.executable, full_main_path],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=temp_dir,
-                env={**os.environ, 'PYTHONPATH': temp_dir}
-            )
-        elif data.language in ["javascript", "typescript"]:
-            result = subprocess.run(
-                ["node", full_main_path],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=temp_dir
-            )
-        
-        output = result.stdout
-        if result.stderr:
-            output += "\n" + result.stderr
-        
-        steps[-1]["status"] = "success" if result.returncode == 0 else "error"
-        
-        return {
-            "output": output or "Build completed (no output)",
-            "error": result.returncode != 0,
-            "steps": steps
-        }
-    
-    except subprocess.TimeoutExpired:
-        return {"output": "Build timed out (30s limit)", "error": True, "steps": steps}
-    except Exception as e:
-        return {"output": str(e), "error": True, "steps": steps}
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
 def get_file_extension(language: str) -> str:
     extensions = {
         "python": ".py",
@@ -975,20 +506,6 @@ def get_file_extension(language: str) -> str:
         "go": ".go"
     }
     return extensions.get(language, ".txt")
-
-# ============== DOWNLOAD ==============
-
-@api_router.get("/download/project")
-async def download_project_zip():
-    """Generate and serve the Neural Bridge project as a ZIP file"""
-    zip_path = "/app/neural-bridge-project.zip"
-    if os.path.exists(zip_path):
-        return FileResponse(
-            zip_path,
-            media_type="application/zip",
-            filename="neural-bridge-project.zip"
-        )
-    raise HTTPException(status_code=404, detail="Project ZIP not found")
 
 # ============== HEALTH CHECK ==============
 
