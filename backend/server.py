@@ -330,10 +330,7 @@ async def create_project(data: ProjectCreate, user: dict = Depends(get_current_u
     return ProjectResponse(**{k: v for k, v in project_doc.items() if k != "_id"})
 
 @api_router.get("/projects", response_model=List[ProjectResponse])
-async def list_projects(authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def list_projects(user: dict = Depends(get_current_user)):
     projects = await db.projects.find(
         {"user_id": user["id"]},
         {"_id": 0}
@@ -342,10 +339,7 @@ async def list_projects(authorization: str = None):
     return [ProjectResponse(**p) for p in projects]
 
 @api_router.get("/projects/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: str, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def get_project(project_id: str, user: dict = Depends(get_current_user)):
     project = await db.projects.find_one(
         {"id": project_id, "user_id": user["id"]},
         {"_id": 0}
@@ -357,10 +351,7 @@ async def get_project(project_id: str, authorization: str = None):
     return ProjectResponse(**project)
 
 @api_router.put("/projects/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: str, data: ProjectUpdate, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def update_project(project_id: str, data: ProjectUpdate, user: dict = Depends(get_current_user)):
     project = await db.projects.find_one({"id": project_id, "user_id": user["id"]})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -379,10 +370,7 @@ async def update_project(project_id: str, data: ProjectUpdate, authorization: st
     return ProjectResponse(**updated)
 
 @api_router.delete("/projects/{project_id}")
-async def delete_project(project_id: str, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def delete_project(project_id: str, user: dict = Depends(get_current_user)):
     result = await db.projects.delete_one({"id": project_id, "user_id": user["id"]})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -405,10 +393,7 @@ async def list_agents():
     ]
 
 @api_router.post("/chat")
-async def chat_with_agent(data: ChatRequest, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def chat_with_agent(data: ChatRequest, user: dict = Depends(get_current_user)):
     if data.agent_type not in AGENTS:
         raise HTTPException(status_code=400, detail="Invalid agent type")
     
