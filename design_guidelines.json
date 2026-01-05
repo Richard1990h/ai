@@ -1,0 +1,167 @@
+{
+  "identity": {
+    "name": "E1: The Anti-AI Designer",
+    "mission": "Create a top 1% design that breaks category conventions using fusion, emotion, and negative space.",
+    "anti_patterns": [
+      "Purple/Teal gradients for CTAs",
+      "Inter font for headings",
+      "Centered layouts everywhere",
+      "Overused gradients (>20%)",
+      "Generic 'SaaS Blue' palettes"
+    ]
+  },
+  "theme_strategy": {
+    "mode": "dark",
+    "archetype": "ARCHETYPE 2: ELECTRIC & NEON",
+    "concept": "The Neural Bridge - A sci-fi command center for code orchestration.",
+    "vibe": "Immersive, High-Contrast, Precision, 'Hacker-Pro'",
+    "emotional_goal": "Empowerment & Focus"
+  },
+  "typography": {
+    "headings": {
+      "family": "Unbounded, sans-serif",
+      "weights": ["400", "700", "900"],
+      "usage": "All section headers, hero titles, major feature names. Use tight tracking.",
+      "import_url": "https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&display=swap"
+    },
+    "body": {
+      "family": "JetBrains Mono, monospace",
+      "weights": ["400", "500"],
+      "usage": "All UI text, buttons, inputs, code blocks, terminal output.",
+      "import_url": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+    },
+    "rules": [
+      "Headings > 32px must use tracking-tight",
+      "Overlines must be UPPERCASE + tracking-widest + text-xs",
+      "Line height: leading-none for headers, leading-relaxed for body"
+    ]
+  },
+  "colors": {
+    "palette": {
+      "background": "hsl(240 10% 4%)",
+      "foreground": "hsl(0 0% 98%)",
+      "card": "hsl(240 10% 6%)",
+      "card_foreground": "hsl(0 0% 98%)",
+      "popover": "hsl(240 10% 6%)",
+      "popover_foreground": "hsl(0 0% 98%)",
+      "primary": "hsl(263 70% 50%)",
+      "primary_foreground": "hsl(0 0% 98%)",
+      "secondary": "hsl(189 94% 43%)",
+      "secondary_foreground": "hsl(0 0% 9%)",
+      "muted": "hsl(240 5% 15%)",
+      "muted_foreground": "hsl(240 5% 65%)",
+      "accent": "hsl(150 100% 40%)",
+      "accent_foreground": "hsl(0 0% 9%)",
+      "destructive": "hsl(330 80% 60%)",
+      "destructive_foreground": "hsl(0 0% 98%)",
+      "border": "hsl(240 5% 20%)",
+      "input": "hsl(240 5% 20%)",
+      "ring": "hsl(263 70% 50%)"
+    },
+    "usage_rules": [
+      "Background is Deep Void Black, not standard gray.",
+      "Primary (Electric Violet) is for 'AI Magic' actions only.",
+      "Secondary (Cyan) is for Data, Code, and Information density.",
+      "Accent (Neon Green) is for Success/Execution states.",
+      "Destructive (Hot Pink) is for Errors/Deletes - Cyberpunk style.",
+      "NEVER use gradients for text readability."
+    ]
+  },
+  "visual_enhancers": {
+    "surface_style": "RETRO-FUTURISM (The Terminal Look)",
+    "glassmorphism": {
+      "usage": "Overlays, Sticky Headers, Modals",
+      "classes": "bg-black/60 backdrop-blur-xl border border-white/10 shadow-2xl"
+    },
+    "borders": {
+      "style": "1px solid",
+      "color": "border-white/10",
+      "active_color": "border-primary/50"
+    },
+    "shadows": {
+      "card": "0 0 0 1px rgba(255,255,255,0.05), 0 4px 20px rgba(0,0,0,0.5)",
+      "glow": "0 0 20px rgba(124, 58, 237, 0.3)"
+    },
+    "textures": {
+      "noise": "Add a subtle noise overlay to the main background to kill digital flatness.",
+      "grid": "Use a faint background grid (opacity 5%) for the 'blueprint' feel."
+    }
+  },
+  "layout_strategy": {
+    "marketing": {
+      "grid": "MODE A: THE TETRIS GRID",
+      "gap": "gap-8 to gap-12",
+      "alignment": "Asymmetrical. Never center by default.",
+      "spacing": "Generous (p-12 to p-32)"
+    },
+    "dashboard": {
+      "grid": "MODE B: THE CONTROL ROOM GRID",
+      "gap": "gap-4",
+      "alignment": "Dense, filled. Use h-full to stretch.",
+      "spacing": "Compact (p-4 to p-6)"
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "Sharp edges or slight rounded-sm. Tech-industrial look.",
+      "hover": "Glow effect (box-shadow) + text color shift.",
+      "classes": "rounded-sm font-mono uppercase tracking-wider"
+    },
+    "cards": {
+      "style": "Flat dark background, 1px border, no default shadow.",
+      "hover": "Border color shift to Primary/Secondary.",
+      "classes": "bg-card border-border hover:border-primary/50 transition-colors duration-300"
+    },
+    "inputs": {
+      "style": "Dark gray background, no border until focus.",
+      "focus": "2px solid Primary ring.",
+      "classes": "bg-muted border-transparent focus:border-primary rounded-sm"
+    }
+  },
+  "image_urls": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1605764949006-10d0e9e1437c?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Abstract Neural Network Blue/Red - Use as hero background with overlay",
+      "category": "background"
+    },
+    "login_background": {
+      "url": "https://images.unsplash.com/photo-1634836466795-2b71a032821c?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Cyberpunk Workspace - Use for Auth pages split layout",
+      "category": "background"
+    },
+    "feature_ai": {
+      "url": "https://images.unsplash.com/photo-1728675437273-d83d4cfaf938?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Abstract Blue Flower/Node - Represents AI Core",
+      "category": "feature"
+    },
+    "feature_code": {
+      "url": "https://images.unsplash.com/photo-1644585587551-85377778d375?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Clean Desk Setup - Represents Workspace",
+      "category": "feature"
+    },
+    "feature_network": {
+      "url": "https://images.unsplash.com/photo-1767477665602-ab4e96be7701?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "description": "Plasma Synthesis - Represents Connectivity",
+      "category": "feature"
+    }
+  },
+  "motion": {
+    "library": "framer-motion",
+    "preferences": {
+      "reduced_motion": "Respect user settings",
+      "style": "Snappy, mechanical transitions (easeOut, duration 0.2s)",
+      "hover": "Scale 1.02 + Glow"
+    }
+  },
+  "universal_guidelines": [
+    "DO NOT use gradients for text readability.",
+    "DO NOT center align the app container.",
+    "Use 'sonner' for toasts.",
+    "Use 'lucide-react' for icons.",
+    "All interactive elements MUST have data-testid attributes.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Dark colors look good when used independently without gradients.",
+    "Create depth through layered design elements with z-index hierarchy."
+  ],
+  "instructions_to_main_agent": "You are building a high-end, futuristic AI coding platform. Adhere strictly to the 'Neural Bridge' concept. Use the provided colors and fonts to create a distinct, non-generic look. Prioritize the 'Control Room' density for the dashboard and 'Tetris' asymmetry for the landing page. Use the image URLs provided for specific sections."
+}
