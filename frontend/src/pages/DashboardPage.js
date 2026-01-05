@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,12 +24,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { 
   Brain, Plus, Folder, MoreVertical, Trash2, LogOut,
-  Code2, Clock, ChevronRight, Search
+  Code2, Clock, ChevronRight, Search, CreditCard, Settings,
+  Shield, Key, Coins, Download, Loader2, Check
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -43,22 +45,49 @@ const languages = [
   { value: 'go', label: 'Go' },
 ];
 
+const creditPackages = {
+  starter: { credits: 500, price: 5.00, name: "Starter Pack" },
+  basic: { credits: 1200, price: 10.00, name: "Basic Pack" },
+  pro: { credits: 3500, price: 25.00, name: "Pro Pack" },
+  enterprise: { credits: 8000, price: 50.00, name: "Enterprise Pack" },
+};
+
 const DashboardPage = () => {
   const { user, logout, getAuthHeader } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [creditsDialogOpen, setCreditsDialogOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [newProject, setNewProject] = useState({
     name: '',
     description: '',
     language: 'python',
   });
   const [creating, setCreating] = useState(false);
+  const [credits, setCredits] = useState(0);
+  const [purchasing, setPurchasing] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   useEffect(() => {
     fetchProjects();
+    fetchCredits();
+    
+    // Check for payment callback
+    const sessionId = searchParams.get('session_id');
+    const payment = searchParams.get('payment');
+    
+    if (sessionId && payment === 'success') {
+      checkPaymentStatus(sessionId);
+    } else if (payment === 'cancelled') {
+      toast.info('Payment cancelled');
+    }
   }, []);
 
   const fetchProjects = async () => {
@@ -70,6 +99,29 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCredits = async () => {
+    try {
+      const response = await axios.get(`${API}/credits/balance`, getAuthHeader());
+      setCredits(response.data.credits);
+    } catch (error) {
+      console.error('Failed to fetch credits');
+    }
+  };
+
+  const checkPaymentStatus = async (sessionId) => {
+    try {
+      const response = await axios.get(`${API}/credits/checkout/status/${sessionId}`, getAuthHeader());
+      if (response.data.payment_status === 'paid') {
+        toast.success(`Payment successful! ${response.data.credits_added} credits added.`);
+        fetchCredits();
+      }
+    } catch (error) {
+      console.error('Payment status check failed');
+    }
+    // Clean URL
+    window.history.replaceState({}, '', '/dashboard');
   };
 
   const createProject = async () => {
@@ -103,6 +155,71 @@ const DashboardPage = () => {
     }
   };
 
+  const purchaseCredits = async (packageId) => {
+    setPurchasing(true);
+    try {
+      const response = await axios.post(`${API}/credits/checkout`, {
+        package_id: packageId,
+        origin_url: window.location.origin
+      }, getAuthHeader());
+      
+      // Redirect to Stripe checkout
+      window.location.href = response.data.url;
+    } catch (error) {
+      toast.error('Failed to initiate checkout');
+      setPurchasing(false);
+    }
+  };
+
+  const resetPassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      await axios.post(`${API}/auth/reset-password`, {
+        current_password: currentPassword,
+        new_password: newPassword
+      }, getAuthHeader());
+      toast.success('Password updated successfully');
+      setPasswordDialogOpen(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to update password');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
+  const downloadProject = async () => {
+    try {
+      const response = await axios.get(`${API}/download/project`, {
+        ...getAuthHeader(),
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'neural-bridge-project.zip');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Download started!');
+    } catch (error) {
+      toast.error('Download failed');
+    }
+  };
+
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -128,19 +245,61 @@ const DashboardPage = () => {
           </Link>
 
           <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium">{user?.name}</p>
-              <p className="text-xs text-muted-foreground">{user?.email}</p>
-            </div>
+            {/* Credits Display */}
             <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => { logout(); navigate('/'); }}
-              className="text-muted-foreground hover:text-foreground"
-              data-testid="logout-btn"
+              variant="outline" 
+              className="gap-2 border-primary/50"
+              onClick={() => setCreditsDialogOpen(true)}
+              data-testid="credits-btn"
             >
-              <LogOut className="w-5 h-5" />
+              <Coins className="w-4 h-4 text-primary" />
+              <span className="font-bold text-primary">{credits}</span>
+              <span className="text-muted-foreground">credits</span>
             </Button>
+
+            {/* Download Button */}
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={downloadProject}
+              title="Download Neural Bridge"
+              data-testid="download-btn"
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+
+            {/* User Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="gap-2" data-testid="user-menu-btn">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-card border-border">
+                <DropdownMenuItem onClick={() => setCreditsDialogOpen(true)} className="cursor-pointer">
+                  <CreditCard className="w-4 h-4 mr-2" /> Buy Credits
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)} className="cursor-pointer">
+                  <Key className="w-4 h-4 mr-2" /> Change Password
+                </DropdownMenuItem>
+                {user?.is_admin && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => navigate('/admin')} className="cursor-pointer text-destructive">
+                      <Shield className="w-4 h-4 mr-2" /> Admin Panel
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { logout(); navigate('/'); }} className="cursor-pointer">
+                  <LogOut className="w-4 h-4 mr-2" /> Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
@@ -334,6 +493,102 @@ const DashboardPage = () => {
           </div>
         )}
       </main>
+
+      {/* Credits Dialog */}
+      <Dialog open={creditsDialogOpen} onOpenChange={setCreditsDialogOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Unbounded' }}>Buy Credits</DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            <div className="text-center mb-6 p-4 bg-muted rounded-sm">
+              <p className="text-sm text-muted-foreground">Current Balance</p>
+              <p className="text-3xl font-bold text-primary">{credits}</p>
+              <p className="text-sm text-muted-foreground">credits</p>
+            </div>
+
+            <div className="space-y-3">
+              {Object.entries(creditPackages).map(([id, pkg]) => (
+                <div
+                  key={id}
+                  className="flex items-center justify-between p-4 bg-muted rounded-sm hover:bg-muted/80 transition-colors"
+                >
+                  <div>
+                    <p className="font-medium">{pkg.name}</p>
+                    <p className="text-sm text-muted-foreground">{pkg.credits.toLocaleString()} credits</p>
+                  </div>
+                  <Button
+                    onClick={() => purchaseCredits(id)}
+                    disabled={purchasing}
+                    className="bg-primary hover:bg-primary/90"
+                    data-testid={`buy-${id}`}
+                  >
+                    {purchasing ? <Loader2 className="w-4 h-4 animate-spin" /> : `$${pkg.price.toFixed(2)}`}
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-muted-foreground text-center mt-4">
+              Powered by Stripe • Secure payments
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Reset Dialog */}
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Unbounded' }}>Change Password</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label>Current Password</Label>
+              <Input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="bg-muted border-transparent"
+                data-testid="current-password-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>New Password</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="bg-muted border-transparent"
+                data-testid="new-password-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Confirm New Password</Label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="bg-muted border-transparent"
+                data-testid="confirm-password-input"
+              />
+              {newPassword && confirmPassword && newPassword === confirmPassword && (
+                <p className="text-xs text-green-500 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Passwords match
+                </p>
+              )}
+            </div>
+            <Button 
+              onClick={resetPassword}
+              className="w-full bg-primary hover:bg-primary/90"
+              disabled={resettingPassword || !currentPassword || !newPassword || !confirmPassword}
+              data-testid="reset-password-btn"
+            >
+              {resettingPassword ? 'Updating...' : 'Update Password'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
