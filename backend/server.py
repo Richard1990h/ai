@@ -442,10 +442,7 @@ async def chat_with_agent(data: ChatRequest, user: dict = Depends(get_current_us
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/chat/history")
-async def get_chat_history(project_id: Optional[str] = None, agent_type: Optional[str] = None, limit: int = 50, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def get_chat_history(project_id: Optional[str] = None, agent_type: Optional[str] = None, limit: int = 50, user: dict = Depends(get_current_user)):
     query = {"user_id": user["id"]}
     if project_id:
         query["project_id"] = project_id
@@ -459,10 +456,7 @@ async def get_chat_history(project_id: Optional[str] = None, agent_type: Optiona
 # ============== CODE EXECUTION ==============
 
 @api_router.post("/execute")
-async def execute_code(data: CodeExecuteRequest, authorization: str = None):
-    from fastapi import Header
-    user = await get_current_user(authorization)
-    
+async def execute_code(data: CodeExecuteRequest, user: dict = Depends(get_current_user)):
     supported_languages = ["python", "javascript", "typescript"]
     if data.language not in supported_languages:
         return {"output": f"Language '{data.language}' execution not supported. Supported: {', '.join(supported_languages)}", "error": True}
